@@ -14,6 +14,14 @@ import (
 
 type Option func(*loggerWrapper) error
 
+// WithFormatter sets a custom formatter for the logger
+func WithFormatter(formatter logrus.Formatter) Option {
+	return func(l *loggerWrapper) error {
+		l.Entry.Logger.SetFormatter(formatter)
+		return nil
+	}
+}
+
 // WithLevel sets the logging level (trace, debug, info, warn, error, fatal, panic)
 func WithLevel(level string) Option {
 	return func(l *loggerWrapper) error {
@@ -69,7 +77,8 @@ func extractCallerInfo(skipFrames int) (callerInfo, bool) {
 				!strings.Contains(funcName, "testing.") &&
 				!strings.Contains(file, "runtime/") &&
 				!strings.Contains(file, "testing/") &&
-				!strings.Contains(funcName, "WithRuntimeContext") {
+				!strings.Contains(funcName, "WithRuntimeContext") &&
+				!strings.Contains(funcName, "logger") {
 
 				info.funcName = funcName
 				info.fileName = file
@@ -93,11 +102,20 @@ func extractCallerInfo(skipFrames int) (callerInfo, bool) {
 // Hook implementation
 func (h *runtimeContextHook) Fire(entry *logrus.Entry) error {
 	if info, ok := extractCallerInfo(h.skipFrames); ok {
-		_, fileName := filepath.Split(info.fileName)
+		// Extract last two path components of the filename
+		var fileName string
+		parts := strings.Split(info.fileName, string(filepath.Separator))
+		if len(parts) >= 2 {
+			fileName = filepath.Join(parts[len(parts)-2], parts[len(parts)-1])
+		} else {
+			fileName = parts[len(parts)-1]
+		}
 
-		// Force quotes by adding them explicitly
-		entry.Data["func"] = fmt.Sprintf("%s.%s", info.pkgName, info.shortFunc)
-		entry.Data["src"] = fmt.Sprintf("%s:%d", fileName, info.line)
+		funcText := fmt.Sprintf("%s.%s", info.pkgName, info.shortFunc)
+		srcText := fmt.Sprintf("%s:%d", fileName, info.line)
+
+		entry.Data["func"] = funcText
+		entry.Data["src"] = srcText
 	}
 	return nil
 }

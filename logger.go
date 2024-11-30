@@ -1,8 +1,12 @@
 package logger
 
 import (
+	"bytes"
+	"fmt"
 	"sync"
+	"time"
 
+	"github.com/fatih/color"
 	"github.com/sirupsen/logrus"
 )
 
@@ -14,11 +18,22 @@ var (
 	// Logger is the global logger instance
 	Logger     *loggerWrapper
 	loggerOnce sync.Once
+	// customFormatter is the custom formatter for the logger
+	customFormatter *ColorFormatter = &ColorFormatter{
+		TextFormatter: logrus.TextFormatter{
+			DisableTimestamp:          false,
+			ForceColors:               true,  // Force colors even if not TTY
+			EnvironmentOverrideColors: true,  // Allow environment to override color settings
+			DisableColors:             false, // Ensure colors aren't disabled
+		},
+	}
 )
 
 func init() {
+	entry := logrus.NewEntry(logrus.StandardLogger())
+	entry.Logger.SetFormatter(customFormatter)
 	Logger = &loggerWrapper{
-		Entry: logrus.NewEntry(logrus.StandardLogger()),
+		Entry: entry,
 	}
 }
 
@@ -45,11 +60,7 @@ func NewSingletonLogger(opts ...Option) (*loggerWrapper, error) {
 
 func createNewLogger(opts ...Option) (*loggerWrapper, error) {
 	l := logrus.New()
-	formatter := &logrus.TextFormatter{
-		DisableTimestamp: true,
-		ForceColors:      true,
-	}
-	l.SetFormatter(formatter)
+	l.SetFormatter(customFormatter)
 
 	logger := &loggerWrapper{
 		Entry: logrus.NewEntry(l),
@@ -142,10 +153,65 @@ func SetLevel(level string) {
 		panic(err)
 	}
 	Logger.Entry.Logger.SetLevel(parsedLevel)
+	if parsedLevel == logrus.DebugLevel || parsedLevel == logrus.TraceLevel {
+		// add the runtime context hook
+		Logger.Entry.Logger.AddHook(NewRuntimeContextHook(3))
+	}
 }
 
 // ResetLogger resets the singleton instance (for testing)
 func ResetLogger() {
 	Logger = nil
 	loggerOnce = sync.Once{}
+}
+
+type ColorFormatter struct {
+	logrus.TextFormatter
+}
+
+func (f *ColorFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+
+	var b bytes.Buffer
+
+	// Colors for log components
+	timestampColor := color.New(color.FgCyan)
+	levelColor := color.New(color.FgWhite)
+	messageColor := color.New(color.Reset) // Default terminal color
+
+	// Determine level color
+	switch entry.Level {
+	case logrus.DebugLevel:
+		levelColor = color.New(color.FgBlue)
+	case logrus.InfoLevel:
+		levelColor = color.New(color.FgGreen)
+	case logrus.WarnLevel:
+		levelColor = color.New(color.FgYellow)
+	case logrus.ErrorLevel:
+		levelColor = color.New(color.FgRed)
+	case logrus.FatalLevel, logrus.PanicLevel:
+		levelColor = color.New(color.BgRed, color.FgWhite)
+	}
+
+	// Format timestamp, level, and message
+	timestamp := timestampColor.Sprint(entry.Time.Format(time.StampMilli))
+	level := levelColor.Sprintf("[%s]", entry.Level.String())
+	message := messageColor.Sprintf(entry.Message)
+
+	// Write main log line
+	b.WriteString(fmt.Sprintf("%s %s %s", timestamp, level, message))
+
+	for key, value := range entry.Data {
+		if key == "func" || key == "src" {
+			fieldColor := color.New(color.FgCyan)
+			fieldKey := fieldColor.Sprint(key)
+			fieldValue := fmt.Sprintf("%s", value)
+			b.WriteString(fmt.Sprintf("\t%s: %s", fieldKey, fieldValue))
+		} else {
+			b.WriteString(fmt.Sprintf("\t%s: %v", key, value))
+		}
+	}
+
+	b.WriteString("\n")
+
+	return b.Bytes(), nil
 }
