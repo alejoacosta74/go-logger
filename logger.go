@@ -10,16 +10,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type loggerWrapper struct {
+type Logger struct {
 	*logrus.Entry
 }
 
 var (
-	// Logger is the global logger instance
-	Logger     *loggerWrapper
+	// Log is the global logger instance
+	Log        *Logger
 	loggerOnce sync.Once
-	// customFormatter is the custom formatter for the logger
-	customFormatter *ColorFormatter = &ColorFormatter{
+	// colorFormatter is a custom colored formatter for debug and trace levels
+	colorFormatter *ColorFormatter = &ColorFormatter{
 		TextFormatter: logrus.TextFormatter{
 			DisableTimestamp:          false,
 			ForceColors:               true,  // Force colors even if not TTY
@@ -31,38 +31,36 @@ var (
 
 func init() {
 	entry := logrus.NewEntry(logrus.StandardLogger())
-	entry.Logger.SetFormatter(customFormatter)
-	Logger = &loggerWrapper{
+	Log = &Logger{
 		Entry: entry,
 	}
 }
 
-func NewLogger(opts ...Option) (*loggerWrapper, error) {
+func NewLogger(opts ...Option) (*Logger, error) {
 	logger, err := createNewLogger(opts...)
 	if err != nil {
 		return nil, err
 	}
-	Logger = logger
+	Log = logger
 	return logger, nil
 }
 
-func NewSingletonLogger(opts ...Option) (*loggerWrapper, error) {
+func NewSingletonLogger(opts ...Option) (*Logger, error) {
 	var err error
 	loggerOnce.Do(func() {
-		var logger *loggerWrapper
+		var logger *Logger
 		logger, err = createNewLogger(opts...)
 		if err == nil {
-			Logger = logger
+			Log = logger
 		}
 	})
-	return Logger, err
+	return Log, err
 }
 
-func createNewLogger(opts ...Option) (*loggerWrapper, error) {
+func createNewLogger(opts ...Option) (*Logger, error) {
 	l := logrus.New()
-	l.SetFormatter(customFormatter)
 
-	logger := &loggerWrapper{
+	logger := &Logger{
 		Entry: logrus.NewEntry(l),
 	}
 
@@ -76,66 +74,66 @@ func createNewLogger(opts ...Option) (*loggerWrapper, error) {
 
 // package level functions
 func Trace(args ...interface{}) {
-	Logger.Trace(args...)
+	Log.Trace(args...)
 }
 
 func Tracef(format string, args ...interface{}) {
-	Logger.Tracef(format, args...)
+	Log.Tracef(format, args...)
 }
 
 func Debug(args ...interface{}) {
-	Logger.Debug(args...)
+	Log.Debug(args...)
 }
 
 func Debugf(format string, args ...interface{}) {
-	Logger.Debugf(format, args...)
+	Log.Debugf(format, args...)
 }
 
 func Info(args ...interface{}) {
-	Logger.Info(args...)
+	Log.Info(args...)
 }
 
 func Infof(format string, args ...interface{}) {
-	Logger.Infof(format, args...)
+	Log.Infof(format, args...)
 }
 
 func Warn(args ...interface{}) {
-	Logger.Warn(args...)
+	Log.Warn(args...)
 }
 
 func Warnf(format string, args ...interface{}) {
-	Logger.Warnf(format, args...)
+	Log.Warnf(format, args...)
 }
 
 func Error(args ...interface{}) {
-	Logger.Error(args...)
+	Log.Error(args...)
 }
 
 func Errorf(format string, args ...interface{}) {
-	Logger.Errorf(format, args...)
+	Log.Errorf(format, args...)
 }
 
 func Fatal(args ...interface{}) {
-	Logger.Fatal(args...)
+	Log.Fatal(args...)
 }
 
 func Fatalf(format string, args ...interface{}) {
-	Logger.Fatalf(format, args...)
+	Log.Fatalf(format, args...)
 }
 
 func Panic(args ...interface{}) {
-	Logger.Panic(args...)
+	Log.Panic(args...)
 }
 
 func Panicf(format string, args ...interface{}) {
-	Logger.Panicf(format, args...)
+	Log.Panicf(format, args...)
 }
 
-func WithField(key string, value interface{}) *loggerWrapper {
-	return &loggerWrapper{Entry: Logger.WithField(key, value)}
+func WithField(key string, value interface{}) *Logger {
+	return &Logger{Entry: Log.WithField(key, value)}
 }
 
-func WithFields(fields ...string) *loggerWrapper {
+func WithFields(fields ...string) *Logger {
 	if len(fields)%2 != 0 {
 		panic("WithFields requires an even number of arguments")
 	}
@@ -144,7 +142,7 @@ func WithFields(fields ...string) *loggerWrapper {
 	for i := 0; i < len(fields); i += 2 {
 		f[fields[i]] = fields[i+1]
 	}
-	return &loggerWrapper{Entry: Logger.WithFields(f)}
+	return &Logger{Entry: Log.WithFields(f)}
 }
 
 func SetLevel(level string) {
@@ -152,16 +150,18 @@ func SetLevel(level string) {
 	if err != nil {
 		panic(err)
 	}
-	Logger.Entry.Logger.SetLevel(parsedLevel)
+	Log.Entry.Logger.SetLevel(parsedLevel)
 	if parsedLevel == logrus.DebugLevel || parsedLevel == logrus.TraceLevel {
+		// set the color formatter
+		Log.Entry.Logger.SetFormatter(colorFormatter)
 		// add the runtime context hook
-		Logger.Entry.Logger.AddHook(NewRuntimeContextHook(3))
+		Log.Entry.Logger.AddHook(NewRuntimeContextHook(3))
 	}
 }
 
 // ResetLogger resets the singleton instance (for testing)
 func ResetLogger() {
-	Logger = nil
+	Log = nil
 	loggerOnce = sync.Once{}
 }
 
@@ -201,14 +201,22 @@ func (f *ColorFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	b.WriteString(fmt.Sprintf("%s %s %s", timestamp, level, message))
 
 	for key, value := range entry.Data {
-		if key == "func" || key == "src" {
-			fieldColor := color.New(color.FgCyan)
-			fieldKey := fieldColor.Sprint(key)
-			fieldValue := fmt.Sprintf("%s", value)
-			b.WriteString(fmt.Sprintf("\t%s: %s", fieldKey, fieldValue))
-		} else {
+		if key != "func" && key != "src" {
 			b.WriteString(fmt.Sprintf("\t%s: %v", key, value))
 		}
+	}
+
+	// ensure we add func and src fields at the end
+	fieldColor := color.New(color.FgCyan)
+	if funcVal, ok := entry.Data["func"]; ok {
+		fieldKey := fieldColor.Sprint("func")
+		fieldValue := fmt.Sprintf("%s", funcVal)
+		b.WriteString(fmt.Sprintf("\t%s: %s", fieldKey, fieldValue))
+	}
+	if srcVal, ok := entry.Data["src"]; ok {
+		fieldKey := fieldColor.Sprint("src")
+		fieldValue := fmt.Sprintf("%s", srcVal)
+		b.WriteString(fmt.Sprintf("\t%s: %s", fieldKey, fieldValue))
 	}
 
 	b.WriteString("\n")

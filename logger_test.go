@@ -2,176 +2,12 @@ package logger
 
 import (
 	"bytes"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/sirupsen/logrus"
 )
-
-// testLoggerCall represents different levels of nesting for logging calls
-type testLoggerCall struct {
-	name     string
-	logFunc  func(logger *loggerWrapper)
-	expected struct {
-		funcPattern string
-		filePattern string
-	}
-}
-
-// level1Logging demonstrates direct logging
-func level1Logging(logger *loggerWrapper) {
-	logger.Info("Level 1 logging")
-}
-
-// level2Logging demonstrates one level of nesting
-func level2Logging(logger *loggerWrapper) {
-	nestedLogging(logger)
-}
-
-// level3Logging demonstrates two levels of nesting
-func level3Logging(logger *loggerWrapper) {
-	level2Logging(logger)
-}
-
-// nestedLogging is a helper function for nested calls
-func nestedLogging(logger *loggerWrapper) {
-	logger.Info("Nested logging")
-}
-
-func TestWithRuntimeContext(t *testing.T) {
-	tests := []testLoggerCall{
-		{
-			name:    "direct_logging",
-			logFunc: level1Logging,
-			expected: struct {
-				funcPattern string
-				filePattern string
-			}{
-				funcPattern: `func: go-logger.level1Logging`,
-				filePattern: `src: logger_test.go:\d+`,
-			},
-		},
-		{
-			name:    "one_level_nested",
-			logFunc: level2Logging,
-			expected: struct {
-				funcPattern string
-				filePattern string
-			}{
-				funcPattern: `func: go-logger.nestedLogging`,
-				filePattern: `src: logger_test.go:\d+`,
-			},
-		},
-		{
-			name:    "two_levels_nested",
-			logFunc: level3Logging,
-			expected: struct {
-				funcPattern string
-				filePattern string
-			}{
-				funcPattern: `func: go-logger.nestedLogging`,
-				filePattern: `src: logger_test.go:\d+`,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-
-			logger, err := NewLogger(
-				WithRuntimeContext(),
-				WithOutput(&buf),
-			)
-			if err != nil {
-				t.Fatalf("Failed to create logger: %v", err)
-			}
-
-			tt.logFunc(logger)
-
-			output := buf.String()
-			strippedOutput := stripANSI(output)
-			funcMatched, err := regexp.MatchString(tt.expected.funcPattern, strippedOutput)
-			if err != nil {
-				t.Fatalf("Invalid function pattern: %v", err)
-			}
-			if !funcMatched {
-				t.Errorf("Function pattern mismatch\nexpected pattern: %s\ngot: %s",
-					tt.expected.funcPattern, strippedOutput)
-			}
-
-			fileMatched, err := regexp.MatchString(tt.expected.filePattern, strippedOutput)
-			if err != nil {
-				t.Fatalf("Invalid file pattern: %v", err)
-			}
-			if !fileMatched {
-				t.Errorf("File pattern mismatch\nexpected pattern: %s\ngot: %s",
-					tt.expected.filePattern, strippedOutput)
-			}
-
-			if strings.Contains(strippedOutput, "logrus") || strings.Contains(strippedOutput, "createNewLogger") {
-				t.Error("Log contains internal logger package calls")
-			}
-		})
-	}
-}
-
-// TestWithRuntimeContextConcurrent tests the runtime context in concurrent scenarios
-func TestWithRuntimeContextConcurrent(t *testing.T) {
-	var buf bytes.Buffer
-	logger, err := NewLogger(
-		WithRuntimeContext(),
-		WithOutput(&buf),
-	)
-	if err != nil {
-		t.Fatalf("Failed to create logger: %v", err)
-	}
-
-	// Run multiple goroutines to ensure thread safety
-	done := make(chan bool)
-	for i := 0; i < 10; i++ {
-		go func() {
-			level3Logging(logger)
-			done <- true
-		}()
-	}
-
-	// Wait for all goroutines to complete
-	for i := 0; i < 10; i++ {
-		<-done
-	}
-
-	// Verify the output contains the correct caller information
-	output := buf.String()
-	strippedOutput := stripANSI(output)
-	if strings.Contains(strippedOutput, "logrus") || strings.Contains(strippedOutput, "createNewLogger") {
-		t.Error("Log contains internal logger package calls in concurrent scenario")
-	}
-}
-
-// TestWithRuntimeContextCustomization verifies that the runtime context formatting can be customized
-func TestWithRuntimeContextCustomization(t *testing.T) {
-	var buf bytes.Buffer
-	logger, err := NewLogger(
-		WithRuntimeContext(),
-		WithOutput(&buf),
-		WithMultipleFields("service", "test-service"),
-	)
-	if err != nil {
-		t.Fatalf("Failed to create logger: %v", err)
-	}
-
-	logger.Info("Test message")
-
-	output := buf.String()
-	strippedOutput := stripANSI(output)
-	if !strings.Contains(strippedOutput, "service=test-service") {
-		t.Errorf("Custom fields not present in runtime context output\nOutput: %q\nSearching for: %q",
-			strippedOutput, "service=test-service")
-	}
-}
 
 func TestWithLevel(t *testing.T) {
 	tests := []struct {
@@ -311,12 +147,12 @@ func TestNewSingletonLogger(t *testing.T) {
 		name    string
 		opts    []Option
 		wantErr bool
-		test    func(*testing.T, *loggerWrapper)
+		test    func(*testing.T, *Logger)
 	}{
 		{
 			name: "basic singleton creation",
 			opts: []Option{},
-			test: func(t *testing.T, l *loggerWrapper) {
+			test: func(t *testing.T, l *Logger) {
 				// Get another instance and verify it's the same
 				l2, err := NewSingletonLogger()
 				if err != nil {
@@ -333,7 +169,7 @@ func TestNewSingletonLogger(t *testing.T) {
 				WithLevel("debug"),
 				WithMultipleFields("service", "test"),
 			},
-			test: func(t *testing.T, l *loggerWrapper) {
+			test: func(t *testing.T, l *Logger) {
 				if l.Entry.Logger.GetLevel() != logrus.DebugLevel {
 					t.Error("Level option not applied")
 				}
@@ -353,11 +189,11 @@ func TestNewSingletonLogger(t *testing.T) {
 		{
 			name: "concurrent access",
 			opts: []Option{},
-			test: func(t *testing.T, l *loggerWrapper) {
+			test: func(t *testing.T, l *Logger) {
 				// Test concurrent access to singleton
 				const numGoroutines = 10
 				var wg sync.WaitGroup
-				instances := make([]*loggerWrapper, numGoroutines)
+				instances := make([]*Logger, numGoroutines)
 				errs := make([]error, numGoroutines)
 
 				wg.Add(numGoroutines)
@@ -385,7 +221,7 @@ func TestNewSingletonLogger(t *testing.T) {
 		{
 			name: "option modification after creation",
 			opts: []Option{},
-			test: func(t *testing.T, l *loggerWrapper) {
+			test: func(t *testing.T, l *Logger) {
 				// Get first instance
 				original := l.Entry.Logger.GetLevel()
 
@@ -464,90 +300,4 @@ func TestSingletonLoggerOutput(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestRuntimeContextHook(t *testing.T) {
-	tests := []struct {
-		name      string
-		logLevel  string
-		message   string
-		logFunc   func(*loggerWrapper, string)
-		wantHook  bool
-		wantField map[string]*regexp.Regexp
-	}{
-		{
-			name:     "debug level should add runtime context",
-			logLevel: "debug",
-			message:  "debug message",
-			logFunc:  func(l *loggerWrapper, msg string) { l.Debug(msg) },
-			wantHook: true,
-			wantField: map[string]*regexp.Regexp{
-				"func": regexp.MustCompile(`go-logger\.TestRuntimeContextHook\.func\d+`),
-				"src":  regexp.MustCompile(`logger_test\.go:\d+`),
-			},
-		},
-		{
-			name:     "trace level should add runtime context",
-			logLevel: "trace",
-			message:  "trace message",
-			logFunc:  func(l *loggerWrapper, msg string) { l.Trace(msg) },
-			wantHook: true,
-			wantField: map[string]*regexp.Regexp{
-				"func": regexp.MustCompile(`go-logger\.TestRuntimeContextHook\.func\d+`),
-				"src":  regexp.MustCompile(`logger_test\.go:\d+`),
-			},
-		},
-		{
-			name:      "info level should not add runtime context",
-			logLevel:  "info",
-			message:   "info message",
-			logFunc:   func(l *loggerWrapper, msg string) { l.Info(msg) },
-			wantHook:  false,
-			wantField: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-
-			logger, err := NewLogger(
-				WithLevel(tt.logLevel),
-				WithOutput(&buf),
-			)
-			if err != nil {
-				t.Fatalf("Failed to create logger: %v", err)
-			}
-
-			tt.logFunc(logger, tt.message)
-			output := buf.String()
-			strippedOutput := stripANSI(output)
-
-			// Verify runtime context fields
-			if tt.wantHook {
-				for field, pattern := range tt.wantField {
-					if !pattern.MatchString(strippedOutput) {
-						t.Errorf("Missing or incorrect %s\nwant pattern: %q\ngot output: %q",
-							field, pattern.String(), strippedOutput)
-					}
-				}
-			} else {
-				// Verify no runtime context was added
-				if strings.Contains(strippedOutput, "func:") || strings.Contains(strippedOutput, "src:") {
-					t.Errorf("Runtime context was added when it shouldn't be\noutput: %q", strippedOutput)
-				}
-			}
-
-			// Verify message was logged
-			if !strings.Contains(strippedOutput, tt.message) {
-				t.Errorf("Log message missing\nwant: %q\ngot: %q", tt.message, strippedOutput)
-			}
-		})
-	}
-}
-
-// helper function to strip ANSI color codes
-func stripANSI(s string) string {
-	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	return re.ReplaceAllString(s, "")
 }

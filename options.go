@@ -12,11 +12,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type Option func(*loggerWrapper) error
+type Option func(*Logger) error
 
 // WithFormatter sets a custom formatter for the logger
 func WithFormatter(formatter logrus.Formatter) Option {
-	return func(l *loggerWrapper) error {
+	return func(l *Logger) error {
 		l.Entry.Logger.SetFormatter(formatter)
 		return nil
 	}
@@ -24,7 +24,7 @@ func WithFormatter(formatter logrus.Formatter) Option {
 
 // WithLevel sets the logging level (trace, debug, info, warn, error, fatal, panic)
 func WithLevel(level string) Option {
-	return func(l *loggerWrapper) error {
+	return func(l *Logger) error {
 		parsedLevel, err := logrus.ParseLevel(level)
 		if err != nil {
 			return err
@@ -77,11 +77,19 @@ func extractCallerInfo(skipFrames int) (callerInfo, bool) {
 				!strings.Contains(funcName, "testing.") &&
 				!strings.Contains(file, "runtime/") &&
 				!strings.Contains(file, "testing/") &&
-				!strings.Contains(funcName, "WithRuntimeContext") &&
-				!strings.Contains(funcName, "logger") {
+				!strings.Contains(file, "logger.go") &&
+				!strings.Contains(funcName, "WithRuntimeContext") {
 
 				info.funcName = funcName
-				info.fileName = file
+
+				var fileName string
+				fileParts := strings.Split(file, string(filepath.Separator))
+				if len(fileParts) >= 2 {
+					fileName = filepath.Join(fileParts[len(fileParts)-2], fileParts[len(fileParts)-1])
+				} else {
+					fileName = fileParts[len(fileParts)-1]
+				}
+				info.fileName = fileName
 				info.line = line
 
 				lastDot := strings.LastIndex(funcName, ".")
@@ -102,17 +110,9 @@ func extractCallerInfo(skipFrames int) (callerInfo, bool) {
 // Hook implementation
 func (h *runtimeContextHook) Fire(entry *logrus.Entry) error {
 	if info, ok := extractCallerInfo(h.skipFrames); ok {
-		// Extract last two path components of the filename
-		var fileName string
-		parts := strings.Split(info.fileName, string(filepath.Separator))
-		if len(parts) >= 2 {
-			fileName = filepath.Join(parts[len(parts)-2], parts[len(parts)-1])
-		} else {
-			fileName = parts[len(parts)-1]
-		}
 
 		funcText := fmt.Sprintf("%s.%s", info.pkgName, info.shortFunc)
-		srcText := fmt.Sprintf("%s:%d", fileName, info.line)
+		srcText := fmt.Sprintf("%s:%d", info.fileName, info.line)
 
 		entry.Data["func"] = funcText
 		entry.Data["src"] = srcText
@@ -122,7 +122,7 @@ func (h *runtimeContextHook) Fire(entry *logrus.Entry) error {
 
 // WithRuntimeContext implementation
 func WithRuntimeContext() Option {
-	return func(l *loggerWrapper) error {
+	return func(l *Logger) error {
 		formatter := &logrus.TextFormatter{
 			TimestampFormat:        time.RFC3339,
 			FullTimestamp:          true,
@@ -132,10 +132,9 @@ func WithRuntimeContext() Option {
 			DisableColors:          false,
 			CallerPrettyfier: func(f *runtime.Frame) (string, string) {
 				if info, ok := extractCallerInfo(8); ok {
-					_, fileName := filepath.Split(info.fileName)
 					formattedFunc := fmt.Sprintf("func: %s.%s -", info.pkgName, info.shortFunc)
 
-					return formattedFunc, fmt.Sprintf(" - src: %s:%d", fileName, info.line)
+					return formattedFunc, fmt.Sprintf(" - src: %s:%d", info.fileName, info.line)
 				}
 				return "", ""
 			},
@@ -154,7 +153,7 @@ func WithRuntimeContext() Option {
 
 // WithOutput sets the output destination for the logger
 func WithOutput(output io.Writer) Option {
-	return func(l *loggerWrapper) error {
+	return func(l *Logger) error {
 		l.Entry.Logger.SetOutput(output)
 		return nil
 	}
@@ -162,7 +161,7 @@ func WithOutput(output io.Writer) Option {
 
 // WithNullOutput sets the output destination to io.Discard
 func WithNullOutput() Option {
-	return func(l *loggerWrapper) error {
+	return func(l *Logger) error {
 		l.Entry.Logger.SetOutput(io.Discard)
 		return nil
 	}
@@ -170,7 +169,7 @@ func WithNullOutput() Option {
 
 // WithFileOutput sets the output destination to a file
 func WithFileOutput(file string) Option {
-	return func(l *loggerWrapper) error {
+	return func(l *Logger) error {
 		f, err := os.Create(file)
 		if err != nil {
 			panic(err)
@@ -186,7 +185,7 @@ func WithMultipleFields(fields ...string) Option {
 		panic("With MultipleFields requires an even number of arguments")
 	}
 
-	return func(l *loggerWrapper) error {
+	return func(l *Logger) error {
 		f := make(logrus.Fields)
 		for i := 0; i < len(fields); i += 2 {
 			f[fields[i]] = fields[i+1]
