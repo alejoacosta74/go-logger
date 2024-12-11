@@ -50,10 +50,15 @@ func NewRuntimeContextHook(skipFrames int) *runtimeContextHook {
 }
 
 func (h *runtimeContextHook) Levels() []logrus.Level {
-	// Return ALL levels up to Debug (inclusive)
+	// Return ALL levels
 	return []logrus.Level{
 		logrus.TraceLevel, // 0
 		logrus.DebugLevel, // 1
+		logrus.InfoLevel,  // 2
+		logrus.WarnLevel,  // 3
+		logrus.ErrorLevel, // 4
+		logrus.FatalLevel, // 5
+		logrus.PanicLevel, // 6
 	}
 }
 

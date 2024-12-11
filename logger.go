@@ -180,14 +180,16 @@ func (f *ColorFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 
 	// Determine level color
 	switch entry.Level {
+	case logrus.TraceLevel:
+		levelColor = color.New(color.FgHiMagenta)
 	case logrus.DebugLevel:
-		levelColor = color.New(color.FgBlue)
+		levelColor = color.New(color.FgHiGreen)
 	case logrus.InfoLevel:
-		levelColor = color.New(color.FgGreen)
+		levelColor = color.New(color.FgHiBlue)
 	case logrus.WarnLevel:
 		levelColor = color.New(color.FgYellow)
 	case logrus.ErrorLevel:
-		levelColor = color.New(color.FgRed)
+		levelColor = color.New(color.BgRed, color.FgWhite)
 	case logrus.FatalLevel, logrus.PanicLevel:
 		levelColor = color.New(color.BgRed, color.FgWhite)
 	}
