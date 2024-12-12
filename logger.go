@@ -130,7 +130,8 @@ func Panicf(format string, args ...interface{}) {
 }
 
 func WithField(key string, value interface{}) *Logger {
-	return &Logger{Entry: Log.WithField(key, value)}
+	return &Logger{Entry: Log.Entry.WithField(key, value)}
+
 }
 
 func WithFields(fields ...string) *Logger {
@@ -202,9 +203,13 @@ func (f *ColorFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	// Write main log line
 	b.WriteString(fmt.Sprintf("%s %s %s", timestamp, level, message))
 
+	// add a differet color for custom fields
 	for key, value := range entry.Data {
 		if key != "func" && key != "src" {
-			b.WriteString(fmt.Sprintf("\t%s: %v", key, value))
+			fieldColor := color.New(color.FgHiYellow)
+			fieldKey := fieldColor.Sprint(key)
+			fieldValue := fmt.Sprintf("%v", value)
+			b.WriteString(fmt.Sprintf("\t%s: %s", fieldKey, fieldValue))
 		}
 	}
 
