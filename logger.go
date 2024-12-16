@@ -14,6 +14,9 @@ type Logger struct {
 	*logrus.Entry
 }
 
+// Type Fields is an alias for logrus.Fields
+type Fields = logrus.Fields
+
 var (
 	// Log is the global logger instance
 	Log        *Logger
