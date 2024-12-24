@@ -3,6 +3,7 @@ package logger
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -19,7 +20,8 @@ type Fields = logrus.Fields
 
 var (
 	// Log is the global logger instance
-	Log        *Logger
+	Log *Logger
+
 	loggerOnce sync.Once
 	// colorFormatter is a custom colored formatter for debug and trace levels
 	colorFormatter *ColorFormatter = &ColorFormatter{
@@ -76,65 +78,118 @@ func createNewLogger(opts ...Option) (*Logger, error) {
 }
 
 // package level functions
+
+// Trace logs a message at the trace level using the global Log instance.
+// This function modifies the global Log's level to trace and accepts variadic arguments
+// that will be formatted using fmt.Sprint.
 func Trace(args ...interface{}) {
 	Log.Trace(args...)
 }
 
+// Tracef logs a formatted message at the trace level using the global Log instance.
+// This function modifies the global Log's level to trace and accepts a format string
+// and variadic arguments that will be formatted using fmt.Sprintf.
 func Tracef(format string, args ...interface{}) {
 	Log.Tracef(format, args...)
 }
 
+// Debug logs a message at the debug level using the global Log instance.
+// This function modifies the global Log's level to debug and accepts variadic arguments
+// that will be formatted using fmt.Sprint.
 func Debug(args ...interface{}) {
 	Log.Debug(args...)
 }
 
+// Debugf logs a formatted message at the debug level using the global Log instance.
+// This function modifies the global Log's level to debug and accepts a format string
+// and variadic arguments that will be formatted using fmt.Sprintf.
 func Debugf(format string, args ...interface{}) {
 	Log.Debugf(format, args...)
 }
 
+// Info logs a message at the info level using the global Log instance.
+// This function modifies the global Log's level to info and accepts variadic arguments
+// that will be formatted using fmt.Sprint.
 func Info(args ...interface{}) {
 	Log.Info(args...)
 }
 
+// Infof logs a formatted message at the info level using the global Log instance.
+// This function modifies the global Log's level to info and accepts a format string
+// and variadic arguments that will be formatted using fmt.Sprintf.
 func Infof(format string, args ...interface{}) {
 	Log.Infof(format, args...)
 }
 
+// Warn logs a message at the warn level using the global Log instance.
+// This function modifies the global Log's level to warn and accepts variadic arguments
+// that will be formatted using fmt.Sprint.
 func Warn(args ...interface{}) {
 	Log.Warn(args...)
 }
 
+// Warnf logs a formatted message at the warn level using the global Log instance.
+// This function modifies the global Log's level to warn and accepts a format string
+// and variadic arguments that will be formatted using fmt.Sprintf.
 func Warnf(format string, args ...interface{}) {
 	Log.Warnf(format, args...)
 }
 
+// Error logs a message at the error level using the global Log instance.
+// This function modifies the global Log's level to error and accepts variadic arguments
+// that will be formatted using fmt.Sprint.
 func Error(args ...interface{}) {
 	Log.Error(args...)
 }
 
+// Errorf logs a formatted message at the error level using the global Log instance.
+// This function modifies the global Log's level to error and accepts a format string
+// and variadic arguments that will be formatted using fmt.Sprintf.
 func Errorf(format string, args ...interface{}) {
 	Log.Errorf(format, args...)
 }
 
+// Fatal logs a message at the fatal level using the global Log instance and then exits.
+// This function modifies the global Log's level to fatal, accepts variadic arguments
+// that will be formatted using fmt.Sprint, and terminates the program with os.Exit(1).
 func Fatal(args ...interface{}) {
 	Log.Fatal(args...)
 }
 
+// Fatalf logs a formatted message at the fatal level using the global Log instance and then exits.
+// This function modifies the global Log's level to fatal, accepts a format string and variadic
+// arguments that will be formatted using fmt.Sprintf, and terminates the program with os.Exit(1).
 func Fatalf(format string, args ...interface{}) {
 	Log.Fatalf(format, args...)
 }
 
+// Panic logs a message at the panic level using the global Log instance and then panics.
+// This function modifies the global Log's level to panic, accepts variadic arguments
+// that will be formatted using fmt.Sprint, and calls panic() with the resulting string.
 func Panic(args ...interface{}) {
 	Log.Panic(args...)
 }
 
+// Panicf logs a formatted message at the panic level using the global Log instance and then panics.
+// This function modifies the global Log's level to panic, accepts a format string and variadic
+// arguments that will be formatted using fmt.Sprintf, and calls panic() with the resulting string.
 func Panicf(format string, args ...interface{}) {
 	Log.Panicf(format, args...)
 }
 
+// WithField adds a single field to the logger entry. It takes a key string and a value of any type,
+// and returns a new Logger instance with the field added. This is useful for adding contextual
+// information to log entries, such as request IDs, user IDs, or any other metadata that helps
+// trace and debug issues.
 func WithField(key string, value interface{}) *Logger {
 	return &Logger{Entry: Log.Entry.WithField(key, value)}
 
+}
+
+// NullOutput sets the logger output to io.Discard, effectively disabling all log output.
+// This is useful for testing scenarios where log output needs to be suppressed.
+func NullOutput() {
+	Log.Entry.Logger.SetOutput(io.Discard)
 }
 
 func WithFields(fields ...string) *Logger {
