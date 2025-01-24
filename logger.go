@@ -186,6 +186,11 @@ func WithField(key string, value interface{}) *Logger {
 
 }
 
+// SetOutput sets the output destination for the global logger
+func SetOutput(output io.Writer) {
+	Log.Entry.Logger.SetOutput(output)
+}
+
 // NullOutput sets the logger output to io.Discard, effectively disabling all log output.
 // This is useful for testing scenarios where log output needs to be suppressed.
 func NullOutput() {
