@@ -94,6 +94,19 @@ logger, := log.NewLogger(
 )
 ```
 
+### Add logging to a file
+
+The file will be rotated when the max size is reached.
+
+```go
+log.AddFileOutputHook("app.log", &log.RotatingFileConfig{
+	MaxSize:    10,
+	MaxBackups: 3,
+	MaxAge:     7,
+	Compress:   true,
+})
+```
+
 ### Using Fields
 
 ```go
