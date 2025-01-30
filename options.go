@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -37,92 +35,6 @@ func WithLevel(level string) Option {
 		}
 		return nil
 	}
-}
-
-// runtimeContextHook implements logrus.Hook
-type runtimeContextHook struct {
-	skipFrames int // Configurable skip frames
-}
-
-// NewRuntimeContextHook creates a new hook with configurable frame skipping
-func NewRuntimeContextHook(skipFrames int) *runtimeContextHook {
-	return &runtimeContextHook{skipFrames: skipFrames}
-}
-
-func (h *runtimeContextHook) Levels() []logrus.Level {
-	// Return ALL levels
-	return []logrus.Level{
-		logrus.TraceLevel, // 0
-		logrus.DebugLevel, // 1
-		logrus.InfoLevel,  // 2
-		logrus.WarnLevel,  // 3
-		logrus.ErrorLevel, // 4
-		logrus.FatalLevel, // 5
-		logrus.PanicLevel, // 6
-	}
-}
-
-// callerInfo holds the extracted runtime caller information
-type callerInfo struct {
-	funcName  string
-	fileName  string
-	line      int
-	pkgName   string
-	shortFunc string
-}
-
-// extractCallerInfo without anonymous function filtering
-func extractCallerInfo(skipFrames int) (callerInfo, bool) {
-	var info callerInfo
-	for i := skipFrames; i < skipFrames+15; i++ {
-		if pc, file, line, ok := runtime.Caller(i); ok {
-			funcName := runtime.FuncForPC(pc).Name()
-			if !strings.Contains(funcName, "logrus") &&
-				!strings.Contains(funcName, "runtime.") &&
-				!strings.Contains(funcName, "testing.") &&
-				!strings.Contains(file, "runtime/") &&
-				!strings.Contains(file, "testing/") &&
-				!strings.Contains(file, "logger.go") &&
-				!strings.Contains(funcName, "WithRuntimeContext") {
-
-				info.funcName = funcName
-
-				var fileName string
-				fileParts := strings.Split(file, string(filepath.Separator))
-				if len(fileParts) >= 2 {
-					fileName = filepath.Join(fileParts[len(fileParts)-2], fileParts[len(fileParts)-1])
-				} else {
-					fileName = fileParts[len(fileParts)-1]
-				}
-				info.fileName = fileName
-				info.line = line
-
-				lastDot := strings.LastIndex(funcName, ".")
-				if lastDot != -1 {
-					pkgPath := funcName[:lastDot]
-					fullFunc := funcName[lastDot+1:]
-					pkgParts := strings.Split(pkgPath, "/")
-					info.pkgName = pkgParts[len(pkgParts)-1]
-					info.shortFunc = fullFunc
-					return info, true
-				}
-			}
-		}
-	}
-	return info, false
-}
-
-// Hook implementation
-func (h *runtimeContextHook) Fire(entry *logrus.Entry) error {
-	if info, ok := extractCallerInfo(h.skipFrames); ok {
-
-		funcText := fmt.Sprintf("%s.%s", info.pkgName, info.shortFunc)
-		srcText := fmt.Sprintf("%s:%d", info.fileName, info.line)
-
-		entry.Data["func"] = funcText
-		entry.Data["src"] = srcText
-	}
-	return nil
 }
 
 // WithRuntimeContext implementation
